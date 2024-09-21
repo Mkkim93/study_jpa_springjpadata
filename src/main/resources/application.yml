@@ -1,0 +1,25 @@
+spring:
+  thymeleaf:
+    prefix: classpath:/templates/
+    suffix: .html
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/member
+    username: root
+    password: java
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create  # create, create-drop, update, validate 등으로 설정 가능
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        # show_sql: true
+        format_sql: true
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    org.hibernate.orm.jdbc.bind: trace
+    #org.hibernate.type: trace
