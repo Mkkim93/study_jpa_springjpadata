@@ -201,10 +201,6 @@ class MemberJpaRepositoryTest {
         List<Member> result = memberRepository.findByUserName("member5");
         Member member5 = result.get(0);
         System.out.println("member5 = " + member5);
-
         assertThat(resultCount).isEqualTo(3);
     }
-
-
-
 }

@@ -1,7 +1,9 @@
 package study.data_jpa.entity;
 
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import jakarta.persistence.*;
 import lombok.*;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
 import static jakarta.persistence.FetchType.*;
 import static jakarta.persistence.GenerationType.*;
@@ -15,7 +17,9 @@ import static lombok.AccessLevel.*;
         name = "Member.findByUsername",
         query = "select m from Member m where m.username = :username"
 )
-public class Member {
+@NamedEntityGraph(name = "Member.all", attributeNodes = @NamedAttributeNode("team"))
+@JsonPropertyOrder({ "id", "username", "age", "team" })
+public class Member{
 
     @Id @GeneratedValue(strategy = IDENTITY)
     @Column(name = "member_id")

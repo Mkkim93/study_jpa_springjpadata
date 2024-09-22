@@ -1,13 +1,12 @@
 package study.data_jpa.repository;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Slice;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.*;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.transaction.annotation.Transactional;
 import study.data_jpa.dto.MemberDTO;
@@ -27,6 +26,8 @@ class MemberRepositoryTest {
 
     @Autowired MemberRepository memberRepository;
     @Autowired TeamRepository teamRepository;
+    @Autowired EntityManager em;
+    @Autowired MemberQueryRepository memberQueryRepository;
 
     @Test
     public void testMember() {
@@ -179,6 +180,7 @@ class MemberRepositoryTest {
         /**
          * !!!중요 : Entity 를 DTO 로 변환
          *  page.map() + 람다식으로 새로운 dto 객체 생성하여 인스턴스 생성 후 사용
+         *  entity 를 외부(web)로 노출 시키지 말것
          */
 
         // Entity 객체 -> memberDTO 객체로 변환
@@ -190,5 +192,156 @@ class MemberRepositoryTest {
         assertThat(page.getNumber()).isEqualTo(0);
         assertThat(page.isFirst()).isTrue();
         assertThat(page.hasNext()).isTrue();
+    }
+
+    @Test
+    public void findMemberLazy() {
+
+        Team teamA = new Team("teamA");
+        Team teamB = new Team("teamB");
+        teamRepository.save(teamA);
+        teamRepository.save(teamB);
+
+        Member member1 = new Member("member1", 10, teamA);
+        Member member2 = new Member("member1", 10, teamB);
+        memberRepository.save(member1);
+        memberRepository.save(member2);
+
+        em.flush();
+        em.clear();
+
+        // select Member; N + 1 문제 = fetch join 으로 해결
+        List<Member> members = memberRepository.findEntityGraphByUsername("member1");
+        
+        for (Member member : members) {
+            System.out.println("member = " + member.getUsername());
+            System.out.println("member.getTeam().getClass() = " + member.getTeam().getClass());
+            System.out.println("member.team =" + member.getTeam().getName());
+        }
+    }
+
+    // jpa hint & lock
+    @Test
+    public void queryHint() {
+        Member member1 = memberRepository.save(new Member("member1", 10));
+        Long id = member1.getId();
+        em.flush();
+        em.clear();
+
+        Member findMember = memberRepository.findReadOnlyByUsername("member1"); // QueryHints 사용 시 update  쿼리 안나감
+        findMember.setUsername("member2"); // 변경 감지 동작 db 에 update 쿼리 나감
+
+        em.flush();
+    }
+
+    @Test
+    public void lock() {
+        Member member1 = memberRepository.save(new Member("member1", 10));
+        Long id = member1.getId();
+        em.flush();
+        em.clear();
+
+        List<Member> result = memberRepository.findLockByUsername("member1");
+    }
+
+    @Test
+    public void callCustom() {
+        List<Member> result = memberRepository.findMemberCustom();
+    }
+
+    @Test
+    public void specBasic() {
+        Team teamA = new Team("teamA");
+        em.persist(teamA);
+
+        Member m1 = new Member("m1", 0, teamA);
+        Member m2 = new Member("m2", 0, teamA);
+
+        em.persist(m1);
+        em.persist(m2);
+
+        em.flush();
+        em.clear();
+
+        Specification<Member> spec = MemberSpec.username("m1").and(MemberSpec.teamName("teamA"));
+        List<Member> result = memberRepository.findAll(spec);
+        assertThat(result.size()).isEqualTo(1);
+        result.forEach(System.out::println);
+    }
+
+    @Test
+    public void queryByExample() {
+        Team teamA = new Team("teamA");
+        em.persist(teamA);
+
+        Member m1 = new Member("m1", 0, teamA);
+        Member m2 = new Member("m2", 0, teamA);
+
+        em.persist(m1);
+        em.persist(m2);
+
+        em.flush();
+        em.clear();
+
+        Member member = new Member("m1");
+        Team team = new Team("teamA");
+        member.setTeam(team);
+
+        ExampleMatcher matcher = ExampleMatcher.matching()
+                .withIgnorePaths("age"); // age  select 에서 뺌
+        Example<Member> exam = Example.of(member, matcher);
+        List<Member> result = memberRepository.findAll(exam);
+        result.forEach(System.out::println);
+        assertThat(result.get(0).getUsername()).isEqualTo("m1");
+    }
+
+    // 엔티티를 dto 로 변환하지 않고 인터페이스를 생성하여 dto 객체를 그대로 쿼리 날릴 수 잇음
+    @Test
+    public void projections() {
+        Team teamA = new Team("teamA");
+        em.persist(teamA);
+
+        Member m1 = new Member("m1", 0, teamA);
+        Member m2 = new Member("m2", 0, teamA);
+
+        em.persist(m1);
+        em.persist(m2);
+
+        em.flush();
+        em.clear();
+
+        // when
+        List<NestedClosedProjections> result = memberRepository.findProjectionsByUsername("m1", NestedClosedProjections.class);
+
+        for (NestedClosedProjections nestedClosedProjections : result) {
+            String username = nestedClosedProjections.getUsername();
+            NestedClosedProjections.TeamInfo teamName = nestedClosedProjections.getTeam();
+            System.out.println("username = " + username);
+            System.out.println("teamName = " + teamName);
+        }
+    }
+
+    @Test
+    public void nativeQuery() {
+        Team teamA = new Team("teamA");
+        em.persist(teamA);
+
+        Member m1 = new Member("m1", 0, teamA);
+        Member m2 = new Member("m2", 0, teamA);
+
+        em.persist(m1);
+        em.persist(m2);
+
+        em.flush();
+        em.clear();
+
+        Page<MemberProjection> result = memberRepository.findByNativeProjection(PageRequest.of(0, 10));
+        System.out.println("result = " + result.getContent());
+        for (MemberProjection memberProjection : result) {
+            String username = memberProjection.getUsername();
+            String teamName = memberProjection.getTeamName();
+            System.out.println("username = " + username);
+            System.out.println("teamName = " + teamName);
+        }
     }
 }
